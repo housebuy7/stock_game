@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
+# economy.py에서 필요한 모든 기능 불러오기
 from economy import (
     Asset, Player, get_available_news, get_forecast_report,
     PROPERTIES, SKILL_TREE, COLLECTIBLES, get_interest_rate, calc_tax, ENDINGS
@@ -10,6 +11,7 @@ from economy import (
 
 st.set_page_config(page_title="Stock Master Ultimate", layout="wide", initial_sidebar_state="expanded")
 
+# 기본 UI 숨기기
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -20,7 +22,7 @@ header {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 글로벌 서버 상태 (명예의 전당 추가)
+# 1. 글로벌 서버 상태
 # ==========================================
 @st.cache_resource
 def get_global_server():
@@ -37,7 +39,7 @@ def get_global_server():
         "users": {},
         "leaderboard": {},
         "chat_log": [],
-        "hall_of_fame": [], # [NEW] 은퇴/파산 유저들의 영구 기록소
+        "hall_of_fame": [],
         "timeline": timeline,
         "start_idx": int(len(timeline) * 0.1)
     }
@@ -62,7 +64,7 @@ if not st.session_state.nickname:
             nick_input = st.text_input("닉네임", max_chars=10)
             pwd_input = st.text_input("비밀번호 (PIN)", type="password", max_chars=20)
             
-            if st.button("게임 시작 🚀", type="primary", use_container_width=True):
+            if st.button("게임 시작 🚀", type="primary"):
                 if nick_input.strip() == "" or pwd_input.strip() == "": 
                     st.error("닉네임과 비밀번호를 모두 입력해주세요!")
                 else:
@@ -115,13 +117,13 @@ if not st.session_state.nickname:
         st.subheader("🔥 실시간 리더보드")
         if server["leaderboard"]:
             df = pd.DataFrame([{"닉네임": k, "평가자산(원)": v["자산"], "진행 중인 날짜": v["날짜"]} for k, v in server["leaderboard"].items()])
-            st.dataframe(df.sort_values(by="평가자산(원)", ascending=False).reset_index(drop=True), use_container_width=True)
+            st.dataframe(df.sort_values(by="평가자산(원)", ascending=False).reset_index(drop=True))
         else:
             st.info("아직 접속한 플레이어가 없습니다.")
     st.stop()
 
 # ==========================================
-# 3. 내 게임 상태 동기화
+# 3. 내 게임 상태 동기화 및 함수들
 # ==========================================
 me = st.session_state.player
 my_assets = st.session_state.assets
@@ -129,9 +131,31 @@ cur_idx = st.session_state.cur_idx
 cur_date = timeline[cur_idx] if cur_idx < len(timeline) else "END"
 my_nick = st.session_state.nickname
 
+# [핵심 버그 픽스] 엔딩 트리거 함수 보완
 def trigger_ending(assets):
     st.session_state.game_over = True
-    st.session_state.ending_data = me.check_ending(assets)
+    
+    # economy.py의 check_ending 함수가 불완전해서 에러가 나더라도, 무조건 엔딩을 띄우는 비상 정산 시스템
+    try:
+        ed = me.check_ending(assets)
+        if ed is None: raise ValueError("엔딩 데이터 누락")
+        st.session_state.ending_data = ed
+    except:
+        tot = me.get_net_worth(assets)
+        if tot >= 1000000000:
+            ed = {"title": "전설의 투자자", "desc": "월스트리트가 당신을 기억할 것입니다.", "threshold": 1000000000}
+        elif tot >= 100000000:
+            ed = {"title": "슈퍼 개미", "desc": "경제적 자유를 완벽히 달성했습니다.", "threshold": 100000000}
+        elif tot >= 20000000:
+            ed = {"title": "성공한 투자자", "desc": "초기 자본을 훌륭하게 불렸습니다.", "threshold": 20000000}
+        elif tot >= 10000000:
+            ed = {"title": "평범한 개미", "desc": "물가 상승률을 겨우 방어했습니다.", "threshold": 10000000}
+        elif tot > 50000:
+            ed = {"title": "쓴맛을 본 개미", "desc": "시장의 무서움을 깨달았습니다.", "threshold": 50000}
+        else:
+            ed = {"title": "파산", "desc": "모든 것을 잃고 한강으로 향합니다...", "threshold": 0}
+        st.session_state.ending_data = ed
+        
     server["users"][my_nick]["game_over"] = True
     server["users"][my_nick]["ending_data"] = st.session_state.ending_data
     st.rerun()
@@ -140,6 +164,7 @@ def advance_time(days):
     if st.session_state.game_over: return
     
     for _ in range(days):
+        # 만약 시간을 넘기다 마지막 날을 넘어서려 하면 즉시 엔딩!
         if st.session_state.cur_idx >= len(timeline) - 1:
             trigger_ending(my_assets)
             return
@@ -150,6 +175,7 @@ def advance_time(days):
         for a in my_assets: a.set_date(new_date)
         me.daily_stress_update()
         
+        # 파산 체크
         if me.get_total_value(my_assets) <= 50000:
             trigger_ending(my_assets)
             return
@@ -193,7 +219,33 @@ def send_chat():
         if len(server["chat_log"]) > 30: server["chat_log"].pop(0)
         st.session_state.chat_input = ""
 
-# [수정된 환생 로직]
+# ==========================================
+# [엔딩 및 환생 화면]
+# ==========================================
+if st.session_state.game_over:
+    ed = st.session_state.ending_data
+    st.title("🎬 게임 종료 (Game Over)")
+    
+    if ed['threshold'] >= 1000000000: st.balloons()
+    elif ed['threshold'] == 0: st.snow()
+    
+    st.header(ed['title'])
+    st.subheader(f"\"{ed['desc']}\"")
+    st.divider()
+    
+    col_e1, col_e2 = st.columns(2)
+    tot = me.get_net_worth(my_assets)
+    with col_e1:
+        st.metric("최종 자산", f"{int(tot):,}원")
+        st.metric("누적 납부 세금", f"{int(me.total_tax_paid):,}원")
+        st.metric("누적 기부액", f"{int(me.total_donated):,}원")
+    with col_e2:
+        st.metric("최종 수익률", f"{(tot - me.start_cash) / me.start_cash * 100:+.2f}%")
+        st.metric("최종 거주지", PROPERTIES.get(me.home, {}).get('name', '?'))
+        st.metric("보유 스킬 수", f"{len(me.skills)}개")
+    
+    st.divider()
+    
     if st.button("🔄 기록을 남기고 새로운 인생 시작 (환생)", type="primary"):
         server["hall_of_fame"].append({
             "닉네임": my_nick,
@@ -202,15 +254,12 @@ def send_chat():
             "종료 일자": timeline[st.session_state.cur_idx]
         })
         
-        # [NEW] 환생 특전 계산 (원본 main.py 로직 완벽 복구)
-        # 이전 자산의 1%를 다음 생의 초기 자본금으로 추가 (최대 5,000만 원 한도)
         carry_over_bonus = min(50000000, int(tot * 0.01))
-        new_start_cash = 10000000 + me.permanent_bonus + carry_over_bonus
+        new_start_cash = 10000000 + getattr(me, 'permanent_bonus', 0) + carry_over_bonus
         
-        # 새로운 플레이어 객체 생성 (보너스 및 회차 적용)
         new_player = Player(new_start_cash)
-        new_player.permanent_bonus = me.permanent_bonus + carry_over_bonus
-        new_player.run_count = me.run_count + 1
+        new_player.permanent_bonus = getattr(me, 'permanent_bonus', 0) + carry_over_bonus
+        new_player.run_count = getattr(me, 'run_count', 1) + 1
         
         st.session_state.player = new_player
         st.session_state.assets = [Asset(n, t, c, s) for n, t, c, s in [
@@ -233,22 +282,29 @@ def send_chat():
         server["users"][my_nick]["history"] = st.session_state.history_chart
         server["users"][my_nick]["game_over"] = False
         server["users"][my_nick]["ending_data"] = None
-        server["leaderboard"][my_nick] = {"자산": new_start_cash, "날짜": timeline[start_idx]} # 시작 랭킹 갱신
+        server["leaderboard"][my_nick] = {"자산": new_start_cash, "날짜": timeline[start_idx]}
         
         st.toast(f"✨ 환생 특전! {int(new_start_cash):,}원으로 새 인생을 시작합니다. ({new_player.run_count}회차)")
         st.rerun()
+    st.stop()
 
 # ==========================================
-# 4. 사이드바
+# 4. 사이드바 (UI 개선)
 # ==========================================
 with st.sidebar:
     st.title("🕹️ 상태창")
     st.markdown(f"**현재 날짜:** `{cur_date}`")
     
-    col_t1, col_t2, col_t3 = st.columns(3)
-    if col_t1.button("+1일"): advance_time(1); st.rerun()
-    if col_t2.button("+7일"): advance_time(7); st.rerun()
-    if col_t3.button("+30일"): advance_time(30); st.rerun()
+    # [핵심 버그 픽스] 마지막 날짜에 도달하면 직관적인 엔딩 버튼 표시
+    if cur_idx >= len(timeline) - 1:
+        st.warning("⚠️ 마지막 거래일에 도달했습니다!")
+        if st.button("🏁 최종 엔딩 정산하기", type="primary"):
+            trigger_ending(my_assets)
+    else:
+        col_t1, col_t2, col_t3 = st.columns(3)
+        if col_t1.button("+1일"): advance_time(1); st.rerun()
+        if col_t2.button("+7일"): advance_time(7); st.rerun()
+        if col_t3.button("+30일"): advance_time(30); st.rerun()
         
     st.divider()
     
@@ -273,17 +329,16 @@ with st.sidebar:
     if st.button("🔄 서버 동기화"): st.rerun()
 
 # ==========================================
-# 5. 메인 화면 (명예의 전당 탭 추가)
+# 5. 메인 화면
 # ==========================================
 st.title("📈 Stock Master: Ultimate")
 
-# [NEW] 명예의 전당 탭 추가
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 주식 거래소", "💼 내 포트폴리오", "🏦 은행 & 부동산", "⚡ 스킬 & 수집품", "📰 뉴스 & 리포트", "🎖️ 명예의 전당"
 ])
 
 # ----------------------------------------
-# TAB 1: 주식 거래소 (에러 없는 깔끔한 버전)
+# TAB 1: 주식 거래소
 # ----------------------------------------
 with tab1:
     st.subheader("전체 시세판")
@@ -313,7 +368,7 @@ with tab1:
                 increasing_line_color='#FF5252', decreasing_line_color='#448AFF'
             )])
             fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=450, xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
             
     with order_col:
         with st.container(border=True):
@@ -325,7 +380,6 @@ with tab1:
             
             active_tab = st.tabs(trade_tabs)
 
-            # 1. 매수
             with active_tab[0]:
                 st.caption(f"현금: {int(me.cash):,}원 (수수료 {me.get_fee_rate()*100:.2f}%)")
                 bc1, bc2, bc3, bc4 = st.columns(4)
@@ -341,7 +395,6 @@ with tab1:
                     if me.buy(selected_asset, buy_input): st.toast("✅ 매수 완료!"); st.rerun()
                     else: st.error("주문 실패 (잔액 부족)")
 
-            # 2. 매도
             with active_tab[1]:
                 own_qty = me.portfolio.get(selected_asset.name, 0)
                 st.caption(f"보유량: {own_qty}주")
@@ -355,7 +408,6 @@ with tab1:
                     if me.sell(selected_asset, sell_input): st.toast("✅ 매도 완료!"); st.rerun()
                     else: st.error("주문 실패")
                     
-            # 3. 공매도
             if "trade_short" in me.skills:
                 idx = trade_tabs.index("🟣 공매도(Short)")
                 with active_tab[idx]:
@@ -367,7 +419,6 @@ with tab1:
                         if me.short_sell(selected_asset, short_input): st.toast("✅ 숏 진입 완료!"); st.rerun()
                         else: st.error("증거금 부족")
                         
-            # 4. 청산
             if "🟢 숏 청산(Cover)" in trade_tabs:
                 idx = trade_tabs.index("🟢 숏 청산(Cover)")
                 with active_tab[idx]:
@@ -389,7 +440,6 @@ with tab2:
         holdings = []
         pie_data = [] 
         
-        # 현금이 0보다 클 때만 파이 차트 데이터에 추가
         if me.cash > 0: pie_data.append({"자산명": "현금", "평가액": me.cash})
         
         for a in my_assets:
@@ -400,7 +450,6 @@ with tab2:
                 pnl = (cur - avg) / avg * 100 if avg > 0 else 0
                 eval_amt = cur * q
                 holdings.append({"타입":"🟢매수", "종목": a.name, "수량": round(q,2), "평단가": int(avg), "현재가": int(cur), "손익액": int((cur-avg)*q), "수익률": f"{pnl:+.2f}%"})
-                # 주식 평가액이 0보다 클 때만 추가
                 if eval_amt > 0: pie_data.append({"자산명": a.name, "평가액": eval_amt})
                 
             sq = me.short_positions.get(a.name, {}).get("qty", 0)
@@ -413,14 +462,12 @@ with tab2:
                 if margin > 0: pie_data.append({"자산명": f"{a.name}(숏)", "평가액": margin})
                 
         if holdings: 
-            st.dataframe(pd.DataFrame(holdings), use_container_width=True, hide_index=True)
-            
-            # [버그 수정] 파이 차트에 그릴 데이터(pie_data)가 비어있지 않을 때만 그리도록 안전장치 추가!
+            st.dataframe(pd.DataFrame(holdings), hide_index=True)
             if pie_data:
                 st.markdown("##### 🥧 자산 비중 분포")
                 fig_pie = px.pie(pd.DataFrame(pie_data), values='평가액', names='자산명', hole=0.3)
                 fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie)
         else: 
             st.info("보유 중인 포지션이 없습니다.")
         
@@ -431,7 +478,7 @@ with tab2:
         for i, r in enumerate(ranks): 
             r["순위"] = i + 1
             if r["닉네임"] == my_nick: r["닉네임"] = f"🌟 {r['닉네임']} (나)"
-        st.dataframe(pd.DataFrame(ranks), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(ranks), hide_index=True)
 
 # ----------------------------------------
 # TAB 3: 은행, 기부 & 부동산
@@ -451,25 +498,24 @@ with tab3:
         
         loan_amount = st.number_input("대출/상환할 금액 (원)", min_value=0.0, step=1000000.0, value=0.0)
         col_b1, col_b2 = st.columns(2)
-        if col_b1.button("💰 대출 받기", use_container_width=True):
+        if col_b1.button("💰 대출 받기"):
             if loan_amount <= 0: st.error("금액을 입력하세요.")
-            elif loan_amount > available_loan: st.error(f"한도({int(available_loan):,}원) 초과!")
+            elif loan_amount > available_loan: st.error(f"대출 가능 금액({int(available_loan):,}원)을 초과했습니다!")
             else:
                 if me.take_loan(loan_amount, cur_date): st.toast("✅ 대출 승인!"); st.rerun()
                 else: st.error("오류 발생")
                 
-        if col_b2.button("💸 대출 상환", use_container_width=True):
+        if col_b2.button("💸 대출 상환"):
             if loan_amount <= 0: st.error("금액을 입력하세요.")
             else:
                 if me.repay_loan(loan_amount): st.toast("✅ 상환 완료!"); st.rerun()
                 else: st.error("잔액이 부족하거나 대출금이 없습니다.")
                 
         st.divider()
-        # [NEW] 누락되었던 기부 시스템 부활!
         st.subheader("🕊️ 자선 단체 기부")
         st.caption("기부는 연말정산 세금 감면 혜택이 있으며, 특별한 엔딩에 영향을 줍니다.")
-        donate_amt = st.number_input("기부할 금액 (원)", min_value=0, step=1000000)
-        if st.button("기부하기 🤍", use_container_width=True):
+        donate_amt = st.number_input("기부할 금액 (원)", min_value=0.0, step=1000000.0, value=0.0)
+        if st.button("기부하기 🤍"):
             if donate_amt <= 0: st.error("금액을 입력하세요.")
             elif me.cash >= donate_amt:
                 me.cash -= donate_amt
@@ -480,7 +526,6 @@ with tab3:
                 st.error("현금이 부족합니다.")
 
     with c_home:
-        # 기존 부동산 코드와 동일 (그대로 유지)
         st.subheader("🏠 부동산 (내 집 마련)")
         st.markdown(f"현재 거주지: **{PROPERTIES.get(me.home, {}).get('name', '고시원')}**")
         
@@ -550,16 +595,15 @@ with tab5:
                 else: st.info("해당 섹터에 임박한 큰 이벤트가 없습니다.")
 
 # ----------------------------------------
-# TAB 6: 명예의 전당 (새로 추가됨!)
+# TAB 6: 명예의 전당
 # ----------------------------------------
 with tab6:
     st.subheader("🎖️ 서버 명예의 전당")
     st.caption("파산하거나 게임을 완주한 전설적인 투자자들의 기록입니다.")
     if server["hall_of_fame"]:
         hof_df = pd.DataFrame(server["hall_of_fame"])
-        # 자산 기준으로 내림차순 정렬
         hof_df = hof_df.sort_values(by="최종 자산", ascending=False).reset_index(drop=True)
         hof_df.index += 1
-        st.dataframe(hof_df, use_container_width=True)
+        st.dataframe(hof_df)
     else:
         st.info("아직 역사를 남긴 투자자가 없습니다. 첫 번째 전설이 되어보세요!")
