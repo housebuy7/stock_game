@@ -131,30 +131,25 @@ cur_idx = st.session_state.cur_idx
 cur_date = timeline[cur_idx] if cur_idx < len(timeline) else "END"
 my_nick = st.session_state.nickname
 
-# [핵심 버그 픽스] 엔딩 트리거 함수 보완
 def trigger_ending(assets):
     st.session_state.game_over = True
     
-    # economy.py의 check_ending 함수가 불완전해서 에러가 나더라도, 무조건 엔딩을 띄우는 비상 정산 시스템
     try:
         ed = me.check_ending(assets)
         if ed is None: raise ValueError("엔딩 데이터 누락")
         st.session_state.ending_data = ed
     except:
         tot = me.get_net_worth(assets)
-        if tot >= 1000000000:
-            ed = {"title": "전설의 투자자", "desc": "월스트리트가 당신을 기억할 것입니다.", "threshold": 1000000000}
-        elif tot >= 100000000:
-            ed = {"title": "슈퍼 개미", "desc": "경제적 자유를 완벽히 달성했습니다.", "threshold": 100000000}
-        elif tot >= 20000000:
-            ed = {"title": "성공한 투자자", "desc": "초기 자본을 훌륭하게 불렸습니다.", "threshold": 20000000}
-        elif tot >= 10000000:
-            ed = {"title": "평범한 개미", "desc": "물가 상승률을 겨우 방어했습니다.", "threshold": 10000000}
-        elif tot > 50000:
-            ed = {"title": "쓴맛을 본 개미", "desc": "시장의 무서움을 깨달았습니다.", "threshold": 50000}
-        else:
-            ed = {"title": "파산", "desc": "모든 것을 잃고 한강으로 향합니다...", "threshold": 0}
+        if tot >= 1000000000: ed = {"title": "전설의 투자자", "desc": "월스트리트가 당신을 기억할 것입니다.", "threshold": 1000000000}
+        elif tot >= 100000000: ed = {"title": "슈퍼 개미", "desc": "경제적 자유를 완벽히 달성했습니다.", "threshold": 100000000}
+        elif tot >= 20000000: ed = {"title": "성공한 투자자", "desc": "초기 자본을 훌륭하게 불렸습니다.", "threshold": 20000000}
+        elif tot >= 10000000: ed = {"title": "평범한 개미", "desc": "물가 상승률을 겨우 방어했습니다.", "threshold": 10000000}
+        elif tot > 50000: ed = {"title": "쓴맛을 본 개미", "desc": "시장의 무서움을 깨달았습니다.", "threshold": 50000}
+        else: ed = {"title": "파산", "desc": "모든 것을 잃고 한강으로 향합니다...", "threshold": 0}
         st.session_state.ending_data = ed
+        
+    # [안전장치] 서버 재부팅으로 데이터가 날아갔을 경우 임시 복구
+    if my_nick not in server["users"]: server["users"][my_nick] = {"pwd": "0000"}
         
     server["users"][my_nick]["game_over"] = True
     server["users"][my_nick]["ending_data"] = st.session_state.ending_data
@@ -164,7 +159,6 @@ def advance_time(days):
     if st.session_state.game_over: return
     
     for _ in range(days):
-        # 만약 시간을 넘기다 마지막 날을 넘어서려 하면 즉시 엔딩!
         if st.session_state.cur_idx >= len(timeline) - 1:
             trigger_ending(my_assets)
             return
@@ -175,7 +169,6 @@ def advance_time(days):
         for a in my_assets: a.set_date(new_date)
         me.daily_stress_update()
         
-        # 파산 체크
         if me.get_total_value(my_assets) <= 50000:
             trigger_ending(my_assets)
             return
@@ -202,6 +195,9 @@ def advance_time(days):
 
     net_worth = me.get_net_worth(my_assets)
     server["leaderboard"][my_nick] = {"자산": int(net_worth), "날짜": timeline[st.session_state.cur_idx]}
+    
+    # [안전장치] 서버 재부팅 복구
+    if my_nick not in server["users"]: server["users"][my_nick] = {"pwd": "0000"}
     server["users"][my_nick]["cur_idx"] = st.session_state.cur_idx
     
     st.session_state.history_chart.append({"Date": timeline[st.session_state.cur_idx], "NetWorth": net_worth})
@@ -275,6 +271,9 @@ if st.session_state.game_over:
         
         for i in range(start_idx + 1):
             for a in st.session_state.assets: a.set_date(timeline[i])
+            
+        # [안전장치] 서버 재부팅 복구 
+        if my_nick not in server["users"]: server["users"][my_nick] = {"pwd": "0000"}
             
         server["users"][my_nick]["player"] = st.session_state.player
         server["users"][my_nick]["assets"] = st.session_state.assets
