@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
-# economy.py의 기능을 모두 가져옵니다.
 from economy import (
     Asset, Player, get_available_news, get_forecast_report,
     PROPERTIES, SKILL_TREE, COLLECTIBLES, get_interest_rate, calc_tax, ENDINGS
@@ -11,7 +10,6 @@ from economy import (
 
 st.set_page_config(page_title="Stock Master Ultimate", layout="wide", initial_sidebar_state="expanded")
 
-# 기본 UI(깃허브, 푸터) 숨기기
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -22,7 +20,7 @@ header {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 글로벌 서버 상태 (유저 데이터베이스 추가!)
+# 1. 글로벌 서버 상태 (명예의 전당 추가)
 # ==========================================
 @st.cache_resource
 def get_global_server():
@@ -36,9 +34,10 @@ def get_global_server():
     for a in dummy_assets: all_dates.update(a.dates_list)
     timeline = sorted(list(all_dates))
     return {
-        "users": {},       # [NEW] 유저 저장소: {닉네임: {비밀번호, 캐릭터정보, 주식정보, 턴 정보}}
-        "leaderboard": {}, # 실시간 랭킹
-        "chat_log": [],    # 채팅 기록
+        "users": {},
+        "leaderboard": {},
+        "chat_log": [],
+        "hall_of_fame": [], # [NEW] 은퇴/파산 유저들의 영구 기록소
         "timeline": timeline,
         "start_idx": int(len(timeline) * 0.1)
     }
@@ -48,12 +47,12 @@ timeline = server["timeline"]
 start_idx = server["start_idx"]
 
 # ==========================================
-# 2. 로비 (로그인 & 회원가입 시스템)
+# 2. 로비 (로그인)
 # ==========================================
 if "nickname" not in st.session_state: st.session_state.nickname = None
 
 if not st.session_state.nickname:
-    st.title("🏆 Stock Master: 이어하기 지원")
+    st.title("🏆 Stock Master: 전생 기록 보존")
     st.markdown("비밀번호를 설정해두면 브라우저를 껐다 켜도 자산이 그대로 유지됩니다!")
     
     col1, col2 = st.columns([1, 1.5])
@@ -67,10 +66,8 @@ if not st.session_state.nickname:
                 if nick_input.strip() == "" or pwd_input.strip() == "": 
                     st.error("닉네임과 비밀번호를 모두 입력해주세요!")
                 else:
-                    # [핵심] 기존 유저 로그인 처리
                     if nick_input in server["users"]:
                         if server["users"][nick_input]["pwd"] == pwd_input:
-                            # 비밀번호가 맞으면 서버에서 내 데이터를 고스란히 불러옴
                             st.session_state.nickname = nick_input
                             st.session_state.player = server["users"][nick_input]["player"]
                             st.session_state.assets = server["users"][nick_input]["assets"]
@@ -83,8 +80,6 @@ if not st.session_state.nickname:
                             st.rerun()
                         else:
                             st.error("❌ 비밀번호가 틀렸습니다. (다른 사람이 선점한 닉네임입니다)")
-                    
-                    # 신규 유저 가입 처리
                     else:
                         st.session_state.nickname = nick_input
                         st.session_state.assets = [Asset(n, t, c, s) for n, t, c, s in [
@@ -103,7 +98,6 @@ if not st.session_state.nickname:
                         for i in range(start_idx + 1):
                             for a in st.session_state.assets: a.set_date(timeline[i])
                         
-                        # 서버 유저 DB에 영구 저장 (메모리상)
                         server["users"][nick_input] = {
                             "pwd": pwd_input,
                             "player": st.session_state.player,
@@ -127,7 +121,7 @@ if not st.session_state.nickname:
     st.stop()
 
 # ==========================================
-# 3. 내 게임 상태 동기화 및 핵심 함수
+# 3. 내 게임 상태 동기화
 # ==========================================
 me = st.session_state.player
 my_assets = st.session_state.assets
@@ -180,7 +174,6 @@ def advance_time(days):
             tax = me.pay_annual_tax()
             if tax > 0: st.toast(f"📋 연말정산: 양도소득세 {int(tax):,}원 납부", icon="⚖️")
 
-    # 서버 데이터 동기화 (세이브 포인트)
     net_worth = me.get_net_worth(my_assets)
     server["leaderboard"][my_nick] = {"자산": int(net_worth), "날짜": timeline[st.session_state.cur_idx]}
     server["users"][my_nick]["cur_idx"] = st.session_state.cur_idx
@@ -200,42 +193,53 @@ def send_chat():
         if len(server["chat_log"]) > 30: server["chat_log"].pop(0)
         st.session_state.chat_input = ""
 
-# ==========================================
-# [엔딩 화면]
-# ==========================================
-if st.session_state.game_over:
-    ed = st.session_state.ending_data
-    st.title("🎬 게임 종료 (Game Over)")
-    
-    if ed['threshold'] >= 1000000000: st.balloons()
-    elif ed['threshold'] == 0: st.snow()
-    
-    st.header(ed['title'])
-    st.subheader(f"\"{ed['desc']}\"")
-    st.divider()
-    
-    col_e1, col_e2 = st.columns(2)
-    tot = me.get_net_worth(my_assets)
-    with col_e1:
-        st.metric("최종 자산", f"{int(tot):,}원")
-        st.metric("누적 납부 세금", f"{int(me.total_tax_paid):,}원")
-        st.metric("누적 기부액", f"{int(me.total_donated):,}원")
-    with col_e2:
-        st.metric("최종 수익률", f"{(tot - me.start_cash) / me.start_cash * 100:+.2f}%")
-        st.metric("최종 거주지", PROPERTIES.get(me.home, {}).get('name', '?'))
-        st.metric("보유 스킬 수", f"{len(me.skills)}개")
-    
-    st.divider()
-    if st.button("🔄 기록 삭제 후 완전 초기화 (새 게임)", type="primary"):
-        # 서버에서 유저 정보 완전 삭제
-        del server["users"][my_nick]
-        del server["leaderboard"][my_nick]
-        st.session_state.nickname = None
+# [수정된 환생 로직]
+    if st.button("🔄 기록을 남기고 새로운 인생 시작 (환생)", type="primary"):
+        server["hall_of_fame"].append({
+            "닉네임": my_nick,
+            "최종 자산": int(tot),
+            "엔딩 칭호": ed['title'],
+            "종료 일자": timeline[st.session_state.cur_idx]
+        })
+        
+        # [NEW] 환생 특전 계산 (원본 main.py 로직 완벽 복구)
+        # 이전 자산의 1%를 다음 생의 초기 자본금으로 추가 (최대 5,000만 원 한도)
+        carry_over_bonus = min(50000000, int(tot * 0.01))
+        new_start_cash = 10000000 + me.permanent_bonus + carry_over_bonus
+        
+        # 새로운 플레이어 객체 생성 (보너스 및 회차 적용)
+        new_player = Player(new_start_cash)
+        new_player.permanent_bonus = me.permanent_bonus + carry_over_bonus
+        new_player.run_count = me.run_count + 1
+        
+        st.session_state.player = new_player
+        st.session_state.assets = [Asset(n, t, c, s) for n, t, c, s in [
+            ("삼성전자","005930.KS","KRW","Semiconductor"), ("SK하이닉스","000660.KS","KRW","Semiconductor"),
+            ("엔비디아","NVDA","USD","Semiconductor"), ("테슬라","TSLA","USD","Auto"),
+            ("현대차","005380.KS","KRW","Auto"), ("비트코인","BTC-USD","USD","Crypto"),
+            ("삼성바이오","207940.KS","KRW","Bio"), ("애플","AAPL","USD","Default")
+        ]]
+        st.session_state.cur_idx = start_idx
+        st.session_state.history_chart = []
+        st.session_state.game_over = False
+        st.session_state.ending_data = None
+        
+        for i in range(start_idx + 1):
+            for a in st.session_state.assets: a.set_date(timeline[i])
+            
+        server["users"][my_nick]["player"] = st.session_state.player
+        server["users"][my_nick]["assets"] = st.session_state.assets
+        server["users"][my_nick]["cur_idx"] = st.session_state.cur_idx
+        server["users"][my_nick]["history"] = st.session_state.history_chart
+        server["users"][my_nick]["game_over"] = False
+        server["users"][my_nick]["ending_data"] = None
+        server["leaderboard"][my_nick] = {"자산": new_start_cash, "날짜": timeline[start_idx]} # 시작 랭킹 갱신
+        
+        st.toast(f"✨ 환생 특전! {int(new_start_cash):,}원으로 새 인생을 시작합니다. ({new_player.run_count}회차)")
         st.rerun()
-    st.stop()
 
 # ==========================================
-# 4. 사이드바 (컨트롤 패널 & 채팅)
+# 4. 사이드바
 # ==========================================
 with st.sidebar:
     st.title("🕹️ 상태창")
@@ -250,7 +254,7 @@ with st.sidebar:
     
     tot_val = me.get_net_worth(my_assets)
     profit_rate = (tot_val - me.start_cash) / me.start_cash * 100
-    st.metric("💰 총 자산 (부동산 포함)", f"{int(tot_val):,}원", f"{profit_rate:+.2f}%")
+    st.metric("💰 총 순자산 (빚 제외)", f"{int(tot_val):,}원", f"{profit_rate:+.2f}%")
     st.metric("💵 가용 현금", f"{int(me.cash):,}원")
     if me.loan > 0: st.metric("🏦 대출 잔액", f"-{int(me.loan):,}원")
     
@@ -269,16 +273,17 @@ with st.sidebar:
     if st.button("🔄 서버 동기화"): st.rerun()
 
 # ==========================================
-# 5. 메인 화면 (5개의 대형 탭)
+# 5. 메인 화면 (명예의 전당 탭 추가)
 # ==========================================
 st.title("📈 Stock Master: Ultimate")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 주식 거래소", "💼 내 포트폴리오", "🏦 은행 & 부동산", "⚡ 스킬 & 수집품", "📰 뉴스 & 리포트"
+# [NEW] 명예의 전당 탭 추가
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📊 주식 거래소", "💼 내 포트폴리오", "🏦 은행 & 부동산", "⚡ 스킬 & 수집품", "📰 뉴스 & 리포트", "🎖️ 명예의 전당"
 ])
 
 # ----------------------------------------
-# TAB 1: 주식 거래소
+# TAB 1: 주식 거래소 (에러 없는 깔끔한 버전)
 # ----------------------------------------
 with tab1:
     st.subheader("전체 시세판")
@@ -320,7 +325,7 @@ with tab1:
             
             active_tab = st.tabs(trade_tabs)
 
-            # 1. 매수 탭
+            # 1. 매수
             with active_tab[0]:
                 st.caption(f"현금: {int(me.cash):,}원 (수수료 {me.get_fee_rate()*100:.2f}%)")
                 bc1, bc2, bc3, bc4 = st.columns(4)
@@ -331,15 +336,12 @@ with tab1:
                 if bc2.button("50%", key="b3"): st.session_state.buy_qty = max_buy * 0.5
                 if bc3.button("MAX", key="b4"): st.session_state.buy_qty = max_buy * 0.99
                 
-                buy_input = st.number_input("수량", min_value=0.0, step=1.0, key="buy_qty")
+                buy_input = st.number_input("수량", min_value=0.0, step=1.0, key="buy_qty" if 'buy_qty' in st.session_state else None)
                 if st.button("매수 체결", type="primary"):
-                    if me.buy(selected_asset, buy_input): 
-                        st.toast("✅ 매수 체결 완료!") # 문제의 초기화 코드 삭제!
-                        st.rerun()
-                    else: 
-                        st.error("주문 실패 (잔액/스트레스 확인)")
+                    if me.buy(selected_asset, buy_input): st.toast("✅ 매수 완료!"); st.rerun()
+                    else: st.error("주문 실패 (잔액 부족)")
 
-            # 2. 매도 탭
+            # 2. 매도
             with active_tab[1]:
                 own_qty = me.portfolio.get(selected_asset.name, 0)
                 st.caption(f"보유량: {own_qty}주")
@@ -348,46 +350,37 @@ with tab1:
                 if sc2.button("50%", key="s3"): st.session_state.sell_qty = own_qty * 0.5
                 if sc3.button("MAX", key="s4"): st.session_state.sell_qty = own_qty
                 
-                sell_input = st.number_input("수량", min_value=0.0, max_value=float(own_qty), step=1.0, key="sell_qty")
+                sell_input = st.number_input("수량", min_value=0.0, max_value=float(own_qty), step=1.0, key="sell_qty" if 'sell_qty' in st.session_state else None)
                 if st.button("매도 체결"):
-                    if me.sell(selected_asset, sell_input): 
-                        st.toast("✅ 매도 체결 완료!")
-                        st.rerun()
-                    else: 
-                        st.error("주문 실패")
+                    if me.sell(selected_asset, sell_input): st.toast("✅ 매도 완료!"); st.rerun()
+                    else: st.error("주문 실패")
                     
-            # 3. 공매도 탭
+            # 3. 공매도
             if "trade_short" in me.skills:
                 idx = trade_tabs.index("🟣 공매도(Short)")
                 with active_tab[idx]:
                     st.caption("공매도: 증거금 50%")
                     max_short = (me.cash / (cur_price * 0.5)) if cur_price > 0 else 0
                     st.button("MAX 숏", on_click=lambda: st.session_state.update(short_qty=max_short*0.99))
-                    short_input = st.number_input("숏 수량", min_value=0.0, step=1.0, key="short_qty")
+                    short_input = st.number_input("숏 수량", min_value=0.0, step=1.0, key="short_qty" if 'short_qty' in st.session_state else None)
                     if st.button("공매도 진입"):
-                        if me.short_sell(selected_asset, short_input): 
-                            st.toast("✅ 숏 진입 완료!")
-                            st.rerun()
-                        else: 
-                            st.error("증거금 부족")
+                        if me.short_sell(selected_asset, short_input): st.toast("✅ 숏 진입 완료!"); st.rerun()
+                        else: st.error("증거금 부족")
                         
-            # 4. 청산 탭
+            # 4. 청산
             if "🟢 숏 청산(Cover)" in trade_tabs:
                 idx = trade_tabs.index("🟢 숏 청산(Cover)")
                 with active_tab[idx]:
                     sq = me.short_positions.get(selected_asset.name, {}).get("qty", 0)
                     st.caption(f"숏 포지션: {sq}주")
                     st.button("전액 청산", on_click=lambda: st.session_state.update(cover_qty=sq))
-                    cover_input = st.number_input("청산 수량", min_value=0.0, max_value=float(sq), step=1.0, key="cover_qty")
+                    cover_input = st.number_input("청산 수량", min_value=0.0, max_value=float(sq), step=1.0, key="cover_qty" if 'cover_qty' in st.session_state else None)
                     if st.button("포지션 청산"):
-                        if me.close_short(selected_asset, cover_input): 
-                            st.toast("✅ 청산 완료!")
-                            st.rerun()
-                        else: 
-                            st.error("오류 발생")
+                        if me.close_short(selected_asset, cover_input): st.toast("✅ 청산 완료!"); st.rerun()
+                        else: st.error("오류 발생")
 
 # ----------------------------------------
-# TAB 2: 내 포트폴리오 & 글로벌 랭킹
+# TAB 2: 내 포트폴리오
 # ----------------------------------------
 with tab2:
     col_port, col_rank = st.columns([1.5, 1])
@@ -436,26 +429,53 @@ with tab2:
         st.dataframe(pd.DataFrame(ranks), use_container_width=True, hide_index=True)
 
 # ----------------------------------------
-# TAB 3: 은행 & 부동산
+# TAB 3: 은행, 기부 & 부동산
 # ----------------------------------------
 with tab3:
     c_bank, c_home = st.columns(2)
     with c_bank:
         st.subheader("🏦 제일은행")
         st.markdown(f"**현재 기준금리:** `{get_interest_rate(cur_date)}%`")
-        max_loan = me.get_total_value_simple() * (1.0 if "trade_leverage" in me.skills else 0.5)
-        st.markdown(f"**대출 한도:** `{int(max_loan):,}원` / **현재 대출금:** `{int(me.loan):,}원`")
         
-        loan_amount = st.number_input("금액", min_value=0, step=1000000, value=10000000)
+        net_worth = me.get_net_worth(my_assets)
+        max_loan_limit = net_worth * (1.0 if "trade_leverage" in me.skills else 0.5)
+        available_loan = max(0, max_loan_limit - me.loan)
+        
+        st.markdown(f"**총 대출 한도:** `{int(max_loan_limit):,}원` / **현재 대출금:** `{int(me.loan):,}원`")
+        st.markdown(f"**💸 추가 대출 가능 금액:** `{int(available_loan):,}원`")
+        
+        loan_amount = st.number_input("대출/상환할 금액 (원)", min_value=0.0, step=1000000.0, value=0.0)
         col_b1, col_b2 = st.columns(2)
-        if col_b1.button("💰 대출 받기"):
-            if me.take_loan(loan_amount, cur_date): st.success("대출 승인!"); st.rerun()
-            else: st.error("한도 초과입니다.")
-        if col_b2.button("💸 대출 상환"):
-            if me.repay_loan(loan_amount): st.success("상환 완료!"); st.rerun()
-            else: st.error("잔액이 부족하거나 대출금이 없습니다.")
+        if col_b1.button("💰 대출 받기", use_container_width=True):
+            if loan_amount <= 0: st.error("금액을 입력하세요.")
+            elif loan_amount > available_loan: st.error(f"한도({int(available_loan):,}원) 초과!")
+            else:
+                if me.take_loan(loan_amount, cur_date): st.toast("✅ 대출 승인!"); st.rerun()
+                else: st.error("오류 발생")
+                
+        if col_b2.button("💸 대출 상환", use_container_width=True):
+            if loan_amount <= 0: st.error("금액을 입력하세요.")
+            else:
+                if me.repay_loan(loan_amount): st.toast("✅ 상환 완료!"); st.rerun()
+                else: st.error("잔액이 부족하거나 대출금이 없습니다.")
+                
+        st.divider()
+        # [NEW] 누락되었던 기부 시스템 부활!
+        st.subheader("🕊️ 자선 단체 기부")
+        st.caption("기부는 연말정산 세금 감면 혜택이 있으며, 특별한 엔딩에 영향을 줍니다.")
+        donate_amt = st.number_input("기부할 금액 (원)", min_value=0, step=1000000)
+        if st.button("기부하기 🤍", use_container_width=True):
+            if donate_amt <= 0: st.error("금액을 입력하세요.")
+            elif me.cash >= donate_amt:
+                me.cash -= donate_amt
+                me.total_donated += donate_amt
+                st.toast(f"😇 {int(donate_amt):,}원을 기부하셨습니다! (누적: {int(me.total_donated):,}원)")
+                st.rerun()
+            else:
+                st.error("현금이 부족합니다.")
 
     with c_home:
+        # 기존 부동산 코드와 동일 (그대로 유지)
         st.subheader("🏠 부동산 (내 집 마련)")
         st.markdown(f"현재 거주지: **{PROPERTIES.get(me.home, {}).get('name', '고시원')}**")
         
@@ -498,7 +518,7 @@ with tab4:
                         else: st.error("잔고 부족!")
 
 # ----------------------------------------
-# TAB 5: 뉴스 & 리포트 상점
+# TAB 5: 뉴스 & 리포트
 # ----------------------------------------
 with tab5:
     c_news, c_report = st.columns([2, 1])
@@ -523,3 +543,18 @@ with tab5:
                     st.success(f"[{rp['timeframe']}] {rp['title']} - {rp['content']}")
                 elif rp: st.error("잔액 부족")
                 else: st.info("해당 섹터에 임박한 큰 이벤트가 없습니다.")
+
+# ----------------------------------------
+# TAB 6: 명예의 전당 (새로 추가됨!)
+# ----------------------------------------
+with tab6:
+    st.subheader("🎖️ 서버 명예의 전당")
+    st.caption("파산하거나 게임을 완주한 전설적인 투자자들의 기록입니다.")
+    if server["hall_of_fame"]:
+        hof_df = pd.DataFrame(server["hall_of_fame"])
+        # 자산 기준으로 내림차순 정렬
+        hof_df = hof_df.sort_values(by="최종 자산", ascending=False).reset_index(drop=True)
+        hof_df.index += 1
+        st.dataframe(hof_df, use_container_width=True)
+    else:
+        st.info("아직 역사를 남긴 투자자가 없습니다. 첫 번째 전설이 되어보세요!")
