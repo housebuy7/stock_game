@@ -305,8 +305,11 @@ with tab1:
                 
                 buy_input = st.number_input("수량", min_value=0.0, step=1.0, key="buy_qty")
                 if st.button("매수 체결", type="primary"):
-                    if me.buy(selected_asset, buy_input): st.success("체결 완료!"); st.session_state.buy_qty=0.0; st.rerun()
-                    else: st.error("주문 실패 (잔액/스트레스/수량 확인)")
+                    if me.buy(selected_asset, buy_input): 
+                        st.toast("✅ 매수 체결 완료!") # 성공 메시지를 toast로 변경!
+                        st.rerun()
+                    else: 
+                        st.error("주문 실패 (잔액/스트레스/수량 확인)")
 
             # 2. 매도 탭
             with active_tab[1]:
@@ -319,8 +322,11 @@ with tab1:
                 
                 sell_input = st.number_input("수량", min_value=0.0, max_value=float(own_qty), step=1.0, key="sell_qty")
                 if st.button("매도 체결"):
-                    if me.sell(selected_asset, sell_input): st.success("체결 완료!"); st.session_state.sell_qty=0.0; st.rerun()
-                    else: st.error("주문 실패")
+                    if me.sell(selected_asset, sell_input): 
+                        st.toast("✅ 매도 체결 완료!")
+                        st.rerun()
+                    else: 
+                        st.error("주문 실패")
                     
             # 3. 공매도 탭
             if "trade_short" in me.skills:
@@ -331,8 +337,11 @@ with tab1:
                     st.button("MAX 숏", on_click=lambda: st.session_state.update(short_qty=max_short*0.99))
                     short_input = st.number_input("숏 수량", min_value=0.0, step=1.0, key="short_qty")
                     if st.button("공매도 진입"):
-                        if me.short_sell(selected_asset, short_input): st.success("숏 진입!"); st.rerun()
-                        else: st.error("증거금 부족")
+                        if me.short_sell(selected_asset, short_input): 
+                            st.toast("✅ 숏 진입 완료!")
+                            st.rerun()
+                        else: 
+                            st.error("증거금 부족")
                         
             # 4. 청산 탭
             if "🟢 숏 청산(Cover)" in trade_tabs:
@@ -343,8 +352,11 @@ with tab1:
                     st.button("전액 청산", on_click=lambda: st.session_state.update(cover_qty=sq))
                     cover_input = st.number_input("청산 수량", min_value=0.0, max_value=float(sq), step=1.0, key="cover_qty")
                     if st.button("포지션 청산"):
-                        if me.close_short(selected_asset, cover_input): st.success("청산 완료!"); st.rerun()
-                        else: st.error("오류 발생")
+                        if me.close_short(selected_asset, cover_input): 
+                            st.toast("✅ 청산 완료!")
+                            st.rerun()
+                        else: 
+                            st.error("오류 발생")
 
 # ----------------------------------------
 # TAB 2: 내 포트폴리오 & 글로벌 랭킹
