@@ -389,6 +389,7 @@ with tab2:
         holdings = []
         pie_data = [] 
         
+        # 현금이 0보다 클 때만 파이 차트 데이터에 추가
         if me.cash > 0: pie_data.append({"자산명": "현금", "평가액": me.cash})
         
         for a in my_assets:
@@ -399,7 +400,8 @@ with tab2:
                 pnl = (cur - avg) / avg * 100 if avg > 0 else 0
                 eval_amt = cur * q
                 holdings.append({"타입":"🟢매수", "종목": a.name, "수량": round(q,2), "평단가": int(avg), "현재가": int(cur), "손익액": int((cur-avg)*q), "수익률": f"{pnl:+.2f}%"})
-                pie_data.append({"자산명": a.name, "평가액": eval_amt})
+                # 주식 평가액이 0보다 클 때만 추가
+                if eval_amt > 0: pie_data.append({"자산명": a.name, "평가액": eval_amt})
                 
             sq = me.short_positions.get(a.name, {}).get("qty", 0)
             if sq > 0:
@@ -412,10 +414,13 @@ with tab2:
                 
         if holdings: 
             st.dataframe(pd.DataFrame(holdings), use_container_width=True, hide_index=True)
-            st.markdown("##### 🥧 자산 비중 분포")
-            fig_pie = px.pie(pd.DataFrame(pie_data), values='평가액', names='자산명', hole=0.3)
-            fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # [버그 수정] 파이 차트에 그릴 데이터(pie_data)가 비어있지 않을 때만 그리도록 안전장치 추가!
+            if pie_data:
+                st.markdown("##### 🥧 자산 비중 분포")
+                fig_pie = px.pie(pd.DataFrame(pie_data), values='평가액', names='자산명', hole=0.3)
+                fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
+                st.plotly_chart(fig_pie, use_container_width=True)
         else: 
             st.info("보유 중인 포지션이 없습니다.")
         
