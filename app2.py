@@ -331,11 +331,13 @@ with tab1:
                 if bc2.button("50%", key="b3"): st.session_state.buy_qty = max_buy * 0.5
                 if bc3.button("MAX", key="b4"): st.session_state.buy_qty = max_buy * 0.99
                 
-                buy_input = st.number_input("수량", min_value=0.0, step=1.0, key="buy_qty" if 'buy_qty' in st.session_state else None)
+                buy_input = st.number_input("수량", min_value=0.0, step=1.0, key="buy_qty")
                 if st.button("매수 체결", type="primary"):
                     if me.buy(selected_asset, buy_input): 
-                        st.toast("✅ 매수 체결 완료!"); st.session_state.buy_qty=0.0; st.rerun()
-                    else: st.error("주문 실패 (잔액/스트레스 확인)")
+                        st.toast("✅ 매수 체결 완료!") # 문제의 초기화 코드 삭제!
+                        st.rerun()
+                    else: 
+                        st.error("주문 실패 (잔액/스트레스 확인)")
 
             # 2. 매도 탭
             with active_tab[1]:
@@ -346,11 +348,13 @@ with tab1:
                 if sc2.button("50%", key="s3"): st.session_state.sell_qty = own_qty * 0.5
                 if sc3.button("MAX", key="s4"): st.session_state.sell_qty = own_qty
                 
-                sell_input = st.number_input("수량", min_value=0.0, max_value=float(own_qty), step=1.0, key="sell_qty" if 'sell_qty' in st.session_state else None)
+                sell_input = st.number_input("수량", min_value=0.0, max_value=float(own_qty), step=1.0, key="sell_qty")
                 if st.button("매도 체결"):
                     if me.sell(selected_asset, sell_input): 
-                        st.toast("✅ 매도 체결 완료!"); st.session_state.sell_qty=0.0; st.rerun()
-                    else: st.error("주문 실패")
+                        st.toast("✅ 매도 체결 완료!")
+                        st.rerun()
+                    else: 
+                        st.error("주문 실패")
                     
             # 3. 공매도 탭
             if "trade_short" in me.skills:
@@ -359,11 +363,13 @@ with tab1:
                     st.caption("공매도: 증거금 50%")
                     max_short = (me.cash / (cur_price * 0.5)) if cur_price > 0 else 0
                     st.button("MAX 숏", on_click=lambda: st.session_state.update(short_qty=max_short*0.99))
-                    short_input = st.number_input("숏 수량", min_value=0.0, step=1.0, key="short_qty" if 'short_qty' in st.session_state else None)
+                    short_input = st.number_input("숏 수량", min_value=0.0, step=1.0, key="short_qty")
                     if st.button("공매도 진입"):
                         if me.short_sell(selected_asset, short_input): 
-                            st.toast("✅ 숏 진입 완료!"); st.session_state.short_qty=0.0; st.rerun()
-                        else: st.error("증거금 부족")
+                            st.toast("✅ 숏 진입 완료!")
+                            st.rerun()
+                        else: 
+                            st.error("증거금 부족")
                         
             # 4. 청산 탭
             if "🟢 숏 청산(Cover)" in trade_tabs:
@@ -372,11 +378,13 @@ with tab1:
                     sq = me.short_positions.get(selected_asset.name, {}).get("qty", 0)
                     st.caption(f"숏 포지션: {sq}주")
                     st.button("전액 청산", on_click=lambda: st.session_state.update(cover_qty=sq))
-                    cover_input = st.number_input("청산 수량", min_value=0.0, max_value=float(sq), step=1.0, key="cover_qty" if 'cover_qty' in st.session_state else None)
+                    cover_input = st.number_input("청산 수량", min_value=0.0, max_value=float(sq), step=1.0, key="cover_qty")
                     if st.button("포지션 청산"):
                         if me.close_short(selected_asset, cover_input): 
-                            st.toast("✅ 청산 완료!"); st.session_state.cover_qty=0.0; st.rerun()
-                        else: st.error("오류 발생")
+                            st.toast("✅ 청산 완료!")
+                            st.rerun()
+                        else: 
+                            st.error("오류 발생")
 
 # ----------------------------------------
 # TAB 2: 내 포트폴리오 & 글로벌 랭킹
